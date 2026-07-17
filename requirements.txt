@@ -1,0 +1,43 @@
+# Indian Personal Finance RAG Pipeline
+# Python 3.10+
+# Install: pip install -r requirements.txt
+
+# 1. Core ML: Transformers & Embeddings
+torch>=2.2.0
+transformers>=4.40.0          # Qwen2.5 support added in 4.37.0
+sentence-transformers>=2.7.0  # BGE-M3 encode() with normalize_embeddings
+accelerate>=0.28.0            # Required by transformers for device_map="auto"
+bitsandbytes>=0.42.0          # 4-bit NF4 quantisation for Qwen2.5-3B
+einops>=0.7.0                 # Required by some transformer architectures
+sentencepiece>=0.1.99         # Tokeniser for Qwen models
+protobuf>=3.20.0              # Required by sentencepiece
+
+# 2. Vector Search & Sparse Retrieval
+faiss-cpu>=1.8.0              # FAISS flat index; swap for faiss-gpu on T4
+rank-bm25>=0.2.2              # BM25Okapi implementation (pure Python)
+numpy>=1.26.0                 # Required by both FAISS and rank-bm25
+
+# 3. Document Parsing 
+pdfplumber>=0.11.0            # Robust PDF text extraction (handles Govt PDFs)
+beautifulsoup4>=4.12.0        # HTML parsing (Zerodha Varsity pages)
+lxml>=5.1.0                   # Fast HTML parser backend for BeautifulSoup
+requests>=2.31.0              # HTTP downloads for corpus acquisition
+tqdm>=4.66.0                  # Progress bars for corpus download loops
+
+# 4. Text Processing & NLP utilities
+nltk>=3.8.1                   # Sentence tokenisation for hallucination auditor
+tiktoken>=0.7.0               # Token counting for chunk size validation
+
+# 5. Data Handling
+pandas>=2.2.0                 # Corpus manifest management
+ujson>=5.9.0                  # Fast JSON serialisation for chunk metadata
+python-dotenv>=1.0.0          # Load .env files into os.environ
+pydantic>=2.6.0               # Data validation for chunk metadata schemas
+
+# 6. Frontend
+gradio>=4.25.0                # Gradio UI — HF Spaces native
+
+# 7. Logging, Testing & Dev Tools
+loguru>=0.7.2                 # Structured logging (replaces stdlib logging)
+pytest>=8.1.0                 # Test runner
+pytest-cov>=5.0.0             # Coverage reporting
