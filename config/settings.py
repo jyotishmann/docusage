@@ -183,3 +183,104 @@ class Settings(BaseSettings):
         default=0.40,
         description="Max entailment probability below which sentence is flagged ⚠️",
     )
+
+# config/settings.py — Part 3: Retrieval Hyperparameters + Utilities
+# Append these fields and methods to the Settings class.
+
+    # ── Chunking configuration ─────────────────────────────────────────────
+    CHUNK_SIZE: int = Field(
+        default=512,
+        description="Target chunk size in tokens (matched to EMBEDDING_MAX_LENGTH)",
+    )
+    CHUNK_OVERLAP: int = Field(
+        default=64,
+        description="Token overlap between consecutive chunks",
+    )
+    CHUNK_MIN_SIZE: int = Field(
+        default=128,
+        description="Minimum chunk size — smaller chunks are merged with next",
+    )
+
+    # ── Retrieval hyperparameters ──────────────────────────────────────────
+    BM25_TOP_K: int = Field(
+        default=20,
+        description="Number of BM25 candidates per sub-query",
+    )
+    FAISS_TOP_K: int = Field(
+        default=20,
+        description="Number of FAISS candidates per sub-query",
+    )
+    RRF_K: int = Field(
+        default=60,
+        description="RRF smoothing constant (Cormack et al. 2009)",
+    )
+    RERANKER_INPUT_K: int = Field(
+        default=20,
+        description="Top-N from RRF passed to cross-encoder reranker",
+    )
+    GENERATOR_CONTEXT_K: int = Field(
+        default=5,
+        description="Top-N from reranker passed to generator as context",
+    )
+
+    # ── Query routing thresholds ───────────────────────────────────────────
+    ROUTER_MAX_WORDS_SIMPLE: int = Field(
+        default=15,
+        description="Queries shorter than this are never decomposed",
+    )
+    ROUTER_MIN_WORDS_COMPLEX: int = Field(
+        default=60,
+        description="Queries longer than this are always decomposed",
+    )
+    DECOMPOSER_MAX_SUB_QUERIES: int = Field(
+        default=4,
+        description="Maximum number of sub-queries the decomposer can produce",
+    )
+
+    # ── Corpus ring taxonomy ───────────────────────────────────────────────
+    # This is the canonical definition of the four corpus rings.
+    # Stored as a dict: ring_id (int) → ring label (str)
+    CORPUS_RINGS: dict[int, str] = Field(
+        default={
+            1: "Market Investments",
+            2: "Govt Schemes",
+            3: "Banking & RBI",
+            4: "Foreign Investments",
+        },
+        description="Canonical ring taxonomy for the corpus",
+    )
+
+    # ── Gradio UI configuration ────────────────────────────────────────────
+    GRADIO_SERVER_PORT: int = Field(
+        default=7860,
+        description="Port for Gradio server (7860 is HF Spaces default)",
+    )
+    GRADIO_MAX_QUERY_LENGTH: int = Field(
+        default=500,
+        description="Maximum character length for user query input",
+    )
+
+    # ── Utility methods ────────────────────────────────────────────────────
+    def ensure_dirs(self) -> None:
+        """
+        Create all required data directories if they do not exist.
+        Call once at application startup before loading any indices.
+        Safe to call multiple times (exist_ok=True).
+        """
+        dirs_to_create = [
+            self.DATA_DIR,
+            self.RAW_DOCS_DIR,
+            self.DATA_DIR / "chunks",
+            self.INDEX_DIR,
+        ]
+        for d in dirs_to_create:
+            Path(d).mkdir(parents=True, exist_ok=True)  # create if missing
+
+    def ring_label_to_id(self, label: str) -> int | None:
+        """Reverse lookup: ring label string → ring integer ID."""
+        reverse = {v: k for k, v in self.CORPUS_RINGS.items()}
+        return reverse.get(label)  # returns None if label not found
+
+    def get_ring_labels(self) -> list[str]:
+        """Return ring labels in ring-ID order (for Gradio CheckboxGroup)."""
+        return [self.CORPUS_RINGS[i] for i in sorted(self.CORPUS_RINGS)]
