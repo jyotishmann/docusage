@@ -101,3 +101,85 @@ class Settings(BaseSettings):
             except ImportError:
                 return "cpu"
         return v
+
+# config/settings.py — Part 2: Model Configuration
+# Append these fields to the Settings class defined in Part 1.
+# Each model name is the exact HuggingFace Hub identifier.
+
+    # ── Embedding model (BGE-M3) ───────────────────────────────────────────
+    EMBEDDING_MODEL: str = Field(
+        default="BAAI/bge-m3",
+        description="HF Hub ID for the bi-encoder embedding model",
+    )
+    EMBEDDING_DIM: int = Field(
+        default=1024,
+        description="Output embedding dimension of the embedding model",
+    )
+    EMBEDDING_MAX_LENGTH: int = Field(
+        default=512,
+        description="Max tokens per chunk for embedding (matched to chunk size)",
+    )
+    EMBEDDING_BATCH_SIZE: int = Field(
+        default=32,
+        description="Batch size for encoding chunks at index time",
+    )
+
+    # ── Reranker model (BGE-reranker-v2-m3) ───────────────────────────────
+    RERANKER_MODEL: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        description="HF Hub ID for the cross-encoder reranker",
+    )
+
+    # ── Query decomposer (Qwen2.5-1.5B-Instruct) ──────────────────────────
+    DECOMPOSER_MODEL: str = Field(
+        default="Qwen/Qwen2.5-1.5B-Instruct",
+        description="HF Hub ID for the query decomposition model",
+    )
+    DECOMPOSER_MAX_NEW_TOKENS: int = Field(
+        default=256,
+        description="Max new tokens for decomposer output (JSON array of sub-queries)",
+    )
+    DECOMPOSER_TEMPERATURE: float = Field(
+        default=0.2,
+        description="Sampling temperature for decomposer (low = more deterministic)",
+    )
+
+    # ── Generator (Qwen2.5-3B-Instruct) ───────────────────────────────────
+    GENERATOR_MODEL: str = Field(
+        default="Qwen/Qwen2.5-3B-Instruct",
+        description="HF Hub ID for the answer generation model",
+    )
+    GENERATOR_MAX_NEW_TOKENS: int = Field(
+        default=512,
+        description="Max new tokens for generated answer",
+    )
+    GENERATOR_TEMPERATURE: float = Field(
+        default=0.1,
+        description="Near-deterministic: financial answers must be factual",
+    )
+    GENERATOR_TOP_P: float = Field(
+        default=0.9,
+        description="Nucleus sampling top-p for generator",
+    )
+    GENERATOR_REPETITION_PENALTY: float = Field(
+        default=1.1,
+        description="Penalise token repetition in generated output",
+    )
+    GENERATOR_LOAD_IN_4BIT: bool = Field(
+        default=True,
+        description="Load generator in 4-bit NF4 quantisation (saves ~4GB VRAM)",
+    )
+
+    # ── Hallucination auditor (NLI DeBERTa) ───────────────────────────────
+    AUDITOR_MODEL: str = Field(
+        default="cross-encoder/nli-deberta-v3-small",
+        description="HF Hub ID for the NLI-based hallucination auditor",
+    )
+    AUDITOR_ENTAILMENT_THRESHOLD: float = Field(
+        default=0.70,
+        description="Min entailment probability for a sentence to be 'grounded'",
+    )
+    AUDITOR_FLAG_THRESHOLD: float = Field(
+        default=0.40,
+        description="Max entailment probability below which sentence is flagged ⚠️",
+    )
