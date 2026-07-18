@@ -259,6 +259,7 @@ class Settings(BaseSettings):
         default=500,
         description="Maximum character length for user query input",
     )
+    GRADIO_SHARE: bool = False   # overridden to True in Colab via env var
 
     # ── Utility methods ────────────────────────────────────────────────────
     def ensure_dirs(self) -> None:

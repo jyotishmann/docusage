@@ -82,9 +82,8 @@ logger.info(
 # ── Launch (required at module level for HF Spaces) ────────────────────────
 if __name__ == "__main__":
     demo.launch(
-        server_port=settings.GRADIO_SERVER_PORT,
-        share=False,   # set True to get a public ngrok URL in Colab
+        server_port=settings.GRADIO_SERVER_PORT, 
+        share=settings.GRADIO_SHARE,   # True in Colab, False locally
+        show_api=False,
     )
-else:
-    # HF Spaces runs this file directly (not as __main__)
-    demo.launch()  # HF Spaces injects its own server config
+
