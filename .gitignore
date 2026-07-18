@@ -35,8 +35,8 @@ data/
 *.gguf         # quantised model format
 
 # Jupyter
+*.ipynb_checkpoints/
 .ipynb_checkpoints/
-*.ipynb
 
 # Testing & coverage
 .pytest_cache/
