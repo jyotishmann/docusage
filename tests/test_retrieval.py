@@ -225,3 +225,102 @@ class TestRRFFusion:
         assert len(result) > 0
         # c1 appears in both bm25 and faiss → should have highest RRF score
         assert result[0].chunk_id == "c1"
+
+# tests/test_retrieval.py — Part 2: HybridRetriever integration tests
+# Append to tests/test_retrieval.py after Part 1.
+# Mocks DenseRetriever to avoid BGE-M3 loading; tests BM25 for real.
+
+from unittest.mock import MagicMock, patch
+
+from retrieval import HybridRetriever
+
+
+class TestHybridRetriever:
+
+    def make_hybrid(self, bm25_retriever) -> HybridRetriever:
+        """
+        Build a HybridRetriever with a real BM25Retriever and mocked DenseRetriever.
+        The mock returns a fixed list of RankedChunks for any query.
+        """
+        mock_dense = MagicMock()
+        mock_dense.retrieve.return_value = [
+            make_ranked_chunk("c1", rank=1, source="faiss"),
+            make_ranked_chunk("c3", rank=2, source="faiss"),
+        ]
+        return HybridRetriever(
+            bm25_retriever=bm25_retriever,
+            dense_retriever=mock_dense,
+            reranker_input_k=10,
+        )
+
+    def test_returns_ranked_chunks(self, bm25_retriever):
+        hybrid = self.make_hybrid(bm25_retriever)
+        results = hybrid.retrieve(["PPF interest rate"])
+        assert len(results) > 0
+        assert all(isinstance(r, RankedChunk) for r in results)
+
+    def test_output_source_is_rrf(self, bm25_retriever):
+        hybrid = self.make_hybrid(bm25_retriever)
+        results = hybrid.retrieve(["PPF interest rate"])
+        assert all(r.source == "rrf" for r in results)
+
+    def test_multi_sub_query_fuses_results(self, bm25_retriever):
+        """Multiple sub-queries should produce a fused, deduplicated result."""
+        hybrid = self.make_hybrid(bm25_retriever)
+        results = hybrid.retrieve(["PPF interest rate", "NPS withdrawal age 60"])
+        chunk_ids = [r.chunk_id for r in results]
+        # No duplicates
+        assert len(chunk_ids) == len(set(chunk_ids))
+
+    def test_output_length_bounded_by_reranker_k(self, bm25_retriever):
+        hybrid = self.make_hybrid(bm25_retriever)
+        results = hybrid.retrieve(["PPF", "NPS", "ELSS", "LRS"], )
+        assert len(results) <= 10   # reranker_input_k=10
+
+    def test_empty_sub_queries_returns_empty(self, bm25_retriever):
+        hybrid = self.make_hybrid(bm25_retriever)
+        results = hybrid.retrieve([])
+        assert results == []
+
+    def test_retrieve_single_is_equivalent(self, bm25_retriever):
+        """retrieve_single(q) should equal retrieve([q])."""
+        hybrid   = self.make_hybrid(bm25_retriever)
+        multi    = hybrid.retrieve(["PPF interest rate"])
+        single   = hybrid.retrieve_single("PPF interest rate")
+        # Same chunk IDs in same order
+        assert [r.chunk_id for r in multi] == [r.chunk_id for r in single]
+
+    def test_overlap_chunk_ranks_higher(self, bm25_retriever):
+        """
+        c1 appears in both BM25 results and the mocked FAISS results.
+        It should rank higher than chunks appearing in only one list.
+        """
+        hybrid = self.make_hybrid(bm25_retriever)
+        results = hybrid.retrieve(["PPF interest rate"])
+        # c1 is the top BM25 result (PPF query) AND in mocked FAISS results
+        # It should have the highest RRF score
+        top_id = results[0].chunk_id if results else None
+        assert top_id == "c1"
+
+    def test_ring_filter_passed_to_retrievers(self, bm25_retriever):
+        """ring_filter should be passed through to BM25Retriever."""
+        hybrid = self.make_hybrid(bm25_retriever)
+        results = hybrid.retrieve(
+            ["PPF NPS interest rate"],
+            ring_filter=["Govt Schemes"],
+        )
+        # BM25 results filtered to ring 2; mock FAISS returns unfiltered c1,c3
+        # Check that BM25 portion only has ring 2 chunks (mock FAISS returns ring 1)
+        bm25_chunks = [r for r in results if r.chunk.ring == 2]
+        assert len(bm25_chunks) > 0   # at least some ring 2 chunks in output
+
+    def test_dense_retrieve_called_per_sub_query(self, bm25_retriever):
+        """DenseRetriever.retrieve should be called once per sub-query."""
+        mock_dense = MagicMock()
+        mock_dense.retrieve.return_value = []
+        hybrid = HybridRetriever(
+            bm25_retriever=bm25_retriever,
+            dense_retriever=mock_dense,
+        )
+        hybrid.retrieve(["query1", "query2", "query3"])
+        assert mock_dense.retrieve.call_count == 3
