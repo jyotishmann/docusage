@@ -105,3 +105,89 @@ class BM25Indexer:
             if p.exists():
                 paths[f"ring_{ring_id}"] = p
         return paths
+    
+# indexing/bm25_indexer.py — Part 2: BM25IndexLoader (append after Part 1)
+import numpy as np
+
+
+class BM25IndexLoader:
+    """
+    Loads pre-built BM25 pickle indices at startup; provides search().
+    All indices kept in memory after load_all() — no per-query disk I/O.
+    """
+
+    def __init__(self, index_dir: Path | None = None):
+        self.index_dir = Path(index_dir or settings.INDEX_DIR)
+        self._indices: dict[str, dict] = {}
+
+    def load_all(self) -> "BM25IndexLoader":
+        """Load combined + all ring sub-indices. Call once at startup. Returns self."""
+        combined_path = self.index_dir / "bm25_combined.pkl"
+        if not combined_path.exists():
+            raise FileNotFoundError(
+                f"BM25 combined index missing: {combined_path}. Run build_index.py."
+            )
+        self._indices["combined"] = self._load_pkl(combined_path)
+        logger.info("BM25 combined loaded", size=self._indices["combined"]["size"])
+
+        for ring_id in settings.CORPUS_RINGS:
+            path = self.index_dir / f"bm25_ring_{ring_id}.pkl"
+            if path.exists():
+                self._indices[f"ring_{ring_id}"] = self._load_pkl(path)
+                logger.info("BM25 ring loaded", ring=ring_id,
+                            size=self._indices[f"ring_{ring_id}"]["size"])
+        return self
+
+    def search(
+        self,
+        query: str,
+        top_k: int = settings.BM25_TOP_K,
+        ring_filter: list[int] | None = None,
+    ) -> list[tuple[str, float]]:
+        """
+        Search BM25. Returns [(chunk_id, score)] sorted descending.
+        ring_filter: list of ring IDs — single ring uses per-ring sub-index.
+        """
+        payload   = self._select_index(ring_filter)
+        bm25      = payload["bm25"]
+        chunk_ids = payload["chunk_ids"]
+
+        tokens = tokenise(query)
+        if not tokens:
+            return []
+
+        scores: np.ndarray = bm25.get_scores(tokens)  # shape: (n_docs,)
+
+        # O(n) top-k via argpartition, then sort only the partition
+        n = len(scores)
+        if top_k >= n:
+            top_idx = np.argsort(scores)[::-1]
+        else:
+            part    = np.argpartition(scores, -top_k)[-top_k:]
+            top_idx = part[np.argsort(scores[part])[::-1]]
+
+        results = [
+            (chunk_ids[int(i)], float(scores[i]))
+            for i in top_idx
+            if scores[i] > 0  # BM25 score=0 → no query term matched
+        ]
+        logger.debug("BM25 search", query=query[:50], results=len(results))
+        return results
+
+    def _select_index(self, ring_filter: list[int] | None) -> dict:
+        """Single ring → ring sub-index (correct IDF). Multi/no filter → combined."""
+        if ring_filter and len(ring_filter) == 1:
+            key = f"ring_{ring_filter[0]}"
+            if key in self._indices:
+                return self._indices[key]
+            logger.warning("Ring sub-index unavailable, falling back", ring=ring_filter[0])
+        return self._indices["combined"]
+
+    @staticmethod
+    def _load_pkl(path: Path) -> dict:
+        with open(path, "rb") as f:
+            return pickle.load(f)
+
+    @property
+    def combined_size(self) -> int:
+        return self._indices.get("combined", {}).get("size", 0)
