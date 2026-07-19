@@ -129,3 +129,89 @@ def _merge_with_overlap(
             chunks.append(last)
 
     return chunks
+
+# corpus/chunker.py — Part 2: Ring-specific processing + DocumentChunker
+# Append to corpus/chunker.py after Part 1.
+
+from corpus.models import SourceDocument, TextChunk
+
+
+def _extract_rbi_header(text: str) -> str:
+    """Extract first 3 non-empty lines as a compact header string."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    return " | ".join(lines[:3]) if lines else ""
+
+
+class DocumentChunker:
+    """
+    Orchestrates chunking for a SourceDocument.
+    Applies ring-specific pre-processing, then calls recursive_split().
+    Returns a list of TextChunk objects.
+    """
+
+    def __init__(
+        self,
+        chunk_size: int    = settings.CHUNK_SIZE,
+        chunk_overlap: int = settings.CHUNK_OVERLAP,
+        min_chunk_size: int = settings.CHUNK_MIN_SIZE,
+    ):
+        self.chunk_size    = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.min_chunk_size = min_chunk_size
+
+    def chunk_document(self, doc: SourceDocument) -> list[TextChunk]:
+        """Convert a SourceDocument into a list of TextChunks."""
+        if not doc.raw_text.strip():
+            logger.warning("Empty raw_text — skipping", title=doc.title)
+            return []
+
+        # Ring-specific pre-processing
+        processed_text, chunk_prefix = self._preprocess(doc)
+
+        # Adjust min_size for short scheme brochures (Ring 2)
+        min_size = 200 if doc.ring == 2 else self.min_chunk_size
+
+        raw_chunks = recursive_split(
+            text=processed_text,
+            chunk_size=self.chunk_size,
+            chunk_overlap=self.chunk_overlap,
+            min_chunk_size=min_size,
+        )
+
+        text_chunks: list[TextChunk] = []
+        for idx, chunk_text in enumerate(raw_chunks):
+            # Prepend ring-specific prefix to every chunk
+            full_text = f"[{chunk_prefix}]\n\n{chunk_text}" if chunk_prefix else chunk_text
+            text_chunks.append(
+                TextChunk.from_document(
+                    doc=doc,
+                    chunk_text=full_text,
+                    chunk_index=idx,
+                    token_count=count_tokens(full_text),
+                )
+            )
+
+        logger.info("Chunked", title=doc.title, ring=doc.ring, chunks=len(text_chunks))
+        return text_chunks
+
+    def _preprocess(self, doc: SourceDocument) -> tuple[str, str]:
+        """Return (text_to_split, prefix_for_all_chunks)."""
+        text   = doc.raw_text
+        prefix = ""
+
+        if doc.ring == 3 and doc.circular_ref:
+            header = _extract_rbi_header(text)
+            prefix = f"{doc.circular_ref} | {header}" if header else doc.circular_ref
+
+        elif doc.ring == 1 and "Zerodha" in doc.governing_body:
+            prefix = doc.title.replace("Zerodha Varsity — ", "")
+
+        return text, prefix
+
+    def chunk_corpus(self, documents: list[SourceDocument]) -> list[TextChunk]:
+        """Chunk an entire list of documents. Returns all chunks flat."""
+        all_chunks: list[TextChunk] = []
+        for doc in documents:
+            all_chunks.extend(self.chunk_document(doc))
+        logger.info("Corpus chunked", docs=len(documents), chunks=len(all_chunks))
+        return all_chunks
