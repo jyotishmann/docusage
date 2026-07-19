@@ -145,3 +145,112 @@ class BaseDownloader(ABC):
     @abstractmethod
     def parse_to_text(self, file_path: Path, content: bytes) -> str:
         """Extract plain text from raw file content."""
+
+# corpus/downloader.py — Part 2: Concrete PDF and HTML downloaders
+# Append these classes to corpus/downloader.py after BaseDownloader.
+
+import pdfplumber
+import requests
+from bs4 import BeautifulSoup
+
+
+class PDFDownloader(BaseDownloader):
+    """Downloads and parses PDF documents (govt circulars, scheme brochures)."""
+
+    def _validate_response(self, response: requests.Response) -> bool:
+        """Check for PDF magic bytes at the start of the response."""
+        return response.content[:4] == b"%PDF"  # standard PDF file signature
+
+    def parse_to_text(self, file_path: Path, content: bytes) -> str:
+        """
+        Extract text page-by-page using pdfplumber.
+        Per-page try/except ensures one corrupt page does not fail the document.
+        """
+        if not file_path.exists():
+            file_path.write_bytes(content)
+
+        pages_text: list[str] = []
+        with pdfplumber.open(str(file_path)) as pdf:
+            for page_num, page in enumerate(pdf.pages, start=1):
+                try:
+                    text = page.extract_text() or ""
+                    text = self.clean_text(text)
+                    if len(text) < 50:
+                        logger.warning(
+                            "Low text on page (may be scanned image)",
+                            file=file_path.name, page=page_num, chars=len(text),
+                        )
+                    if text:
+                        pages_text.append(text)
+                except Exception as exc:
+                    logger.error(
+                        "Failed to extract page",
+                        file=file_path.name, page=page_num, error=str(exc),
+                    )
+        return "\n\n".join(pages_text)  # double newline separates pages
+
+
+class HTMLDownloader(BaseDownloader):
+    """Downloads and parses HTML documents (Zerodha Varsity, govt web pages)."""
+
+    # CSS selectors tried in priority order to find the main article body
+    CONTENT_SELECTORS = [
+        "article",
+        "main",
+        ".chapter-content",    # Zerodha Varsity chapter body class
+        ".entry-content",
+        ".post-content",
+        "#content",
+        ".content",
+    ]
+
+    # Tags stripped before text extraction (navigation noise)
+    STRIP_TAGS = [
+        "script", "style", "nav", "header", "footer",
+        "aside", "form", "button",
+    ]
+
+    def _validate_response(self, response: requests.Response) -> bool:
+        """Check that response looks like HTML."""
+        snippet = response.content[:500].lower()
+        return b"<html" in snippet or b"<!doctype" in snippet
+
+    def parse_to_text(self, file_path: Path, content: bytes) -> str:
+        """Extract article body text, stripping navigation and boilerplate."""
+        soup = BeautifulSoup(content, "lxml")
+
+        # Strip noise elements first
+        for tag in self.STRIP_TAGS:
+            for element in soup.select(tag):
+                element.decompose()  # remove from parse tree
+
+        # Find article body using priority selector list
+        body = None
+        for selector in self.CONTENT_SELECTORS:
+            body = soup.select_one(selector)
+            if body:
+                break
+        if body is None:
+            body = soup.find("body") or soup  # final fallback
+
+        return self.clean_text(body.get_text(separator="\n"))
+
+    def get_chapter_links(self, module_url: str) -> list[str]:
+        """
+        Scrape a Zerodha Varsity module index page and return chapter URLs.
+        Each module URL contains links to individual chapter pages.
+        """
+        response = self.session.get(module_url, timeout=15)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, "lxml")
+
+        chapter_links: list[str] = []
+        for link in soup.select("a[href*='/chapter/']"):
+            href = link.get("href", "")
+            if href.startswith("/"):
+                href = f"https://zerodha.com{href}"  # make absolute
+            if href and href not in chapter_links:
+                chapter_links.append(href)
+
+        logger.info("Found chapters", module_url=module_url, count=len(chapter_links))
+        return chapter_links
