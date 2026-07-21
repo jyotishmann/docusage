@@ -10,6 +10,7 @@ from pathlib import Path
 
 import requests
 from requests.adapters import HTTPAdapter
+import urllib3
 from urllib3.util.retry import Retry
 
 from config import get_logger, settings
@@ -24,6 +25,10 @@ def _build_session(max_retries: int = 3, backoff_factor: float = 1.0) -> request
     backoff_factor=1.0: retries at 1s, 2s, 4s (exponential).
     """
     session = requests.Session()
+    session.verify = False
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    })
     retry = Retry(
         total=max_retries,
         backoff_factor=backoff_factor,           # exponential backoff
@@ -37,6 +42,7 @@ def _build_session(max_retries: int = 3, backoff_factor: float = 1.0) -> request
     session.headers.update({
         "User-Agent": "DocuSage-FinanceRAG/1.0 (research; contact via GitHub)"
     })
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return session
 
 
@@ -52,9 +58,11 @@ class BaseDownloader(ABC):
         output_dir: Path | None = None,
         delay_seconds: float = 1.5,
         max_retries: int = 3,
+        timeout: int = 30,
     ):
         self.output_dir = Path(output_dir or settings.RAW_DOCS_DIR)
         self.delay_secs = delay_seconds    # polite delay between requests
+        self.timeout = timeout
         self.session    = _build_session(max_retries=max_retries)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -84,12 +92,12 @@ class BaseDownloader(ABC):
             )
             response.raise_for_status()
         except requests.RequestException as exc:
-            logger.error("Download failed", url=doc.source_url, error=str(exc))
+            logger.error(f"Download failed | url={doc.source_url} | error={exc}")
             return doc  # return doc with empty raw_text; caller handles it
 
         # ── Validate response body ─────────────────────────────────────────
         if not self._validate_response(response):
-            logger.warning("Invalid response body", url=doc.source_url)
+            logger.warning(f"Invalid response body | url={doc.source_url}")
             return doc
 
         # ── Save raw bytes to disk ─────────────────────────────────────────
@@ -240,8 +248,17 @@ class HTMLDownloader(BaseDownloader):
         Scrape a Zerodha Varsity module index page and return chapter URLs.
         Each module URL contains links to individual chapter pages.
         """
-        response = self.session.get(module_url, timeout=15)
-        response.raise_for_status()
+        try:
+            response = self.session.get(module_url, timeout=self.timeout)
+            response.raise_for_status()          # ← this is what threw
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"Skipping source -- HTTP error fetching module index | url={module_url}",
+                status=e.response.status_code if e.response else "unknown",)
+            return []   # empty list → download_source skips this source cleanly
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Skipping source -- network error | url={module_url} | error={e}")
+            return []
+        
         soup = BeautifulSoup(response.content, "lxml")
 
         chapter_links: list[str] = []
@@ -254,3 +271,4 @@ class HTMLDownloader(BaseDownloader):
 
         logger.info("Found chapters", module_url=module_url, count=len(chapter_links))
         return chapter_links
+

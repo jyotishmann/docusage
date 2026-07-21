@@ -48,6 +48,13 @@ class CorpusRegistry:
             ujson.dump(payload, f, indent=2, ensure_ascii=False)
         logger.info("Registry saved", chunks=len(self._chunks),
                     path=str(self.registry_path))
+    
+    def get_ring_counts(self) -> dict[int, int]:
+        """Return {ring_id: chunk_count} for all rings in the registry."""
+        return {ring: len(chunks) for ring, chunks in self._ring_index.items()}
+    
+    def __len__(self) -> int:
+        return len(self._chunks)
 
     @classmethod
     def load(cls, registry_path: Path | None = None) -> "CorpusRegistry":
