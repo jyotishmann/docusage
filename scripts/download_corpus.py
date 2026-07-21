@@ -34,6 +34,24 @@ def download_source(
     html_dl: HTMLDownloader,
 ) -> list[SourceDocument]:
     """Download one source entry; expands html_module into chapter pages."""
+    try:
+        urls = html_dl.get_chapter_links(doc.source_url)
+        # ... rest unchanged
+    except Exception as e:
+        # logger.warning("Skipping source entirely", source=doc.doc_title, error=str(e))
+        import traceback
+        logger.warning(
+            "Skipping source entirely",
+            source=doc.title,
+            url=doc.source_url,
+            error=str(e),
+        )
+        print(f"FAILED: {doc.title}")
+        print(f"   URL: {doc.source_url}")
+        print(f" Error: {e}")
+        traceback.print_exc()
+        # logger.warning("Skipping source entirely", source=doc.title, error=str(e))
+        return []
     if doc.file_format == "html_module":
         urls = html_dl.get_chapter_links(doc.source_url)
         results = []
