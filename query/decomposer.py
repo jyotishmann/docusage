@@ -60,3 +60,88 @@ class DecomposerModel:
                 eos_token_id=self._tok.eos_token_id,
             )
         return self._tok.decode(out[0][in_len:], skip_special_tokens=True).strip()
+    
+# query/decomposer.py -- Part 2: QueryDecomposer (append after Part 1)
+import json, re
+
+class QueryDecomposer:
+    """Decomposes complex queries into 2-4 sub-queries via Qwen2.5-1.5B."""
+
+    def __init__(self, model: DecomposerModel):
+        self.model = model
+
+    def decompose(self, query: str) -> list[str]:
+        """Returns 2-4 sub-queries. Falls back to [original_query]."""
+        if not query.strip(): return [query]
+        prompt = self._build_prompt(query)
+        try:
+            raw = self.model.generate(prompt)
+            logger.debug("Decomposer raw", output=raw[:200])
+        except Exception as e:
+            logger.error("Decomposer failed", error=str(e))
+            return [query]
+        return self._parse_and_validate(raw, query)
+
+    def _build_prompt(self, query: str) -> str:
+        return (
+            f"<|im_start|>system\n{DECOMPOSE_SYSTEM}<|im_end|>\n"
+            f"<|im_start|>user\n{DECOMPOSE_USER.format(query=query)}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
+
+    def _parse_and_validate(self, raw, orig):
+        for fn in [self._direct, self._extract, self._normalise, self._strings]:
+            parsed = fn(raw)
+            if parsed is not None:
+                valid = self._validate(parsed, orig)
+                if valid:
+                    logger.info("Decomposed", count=len(valid))
+                    return valid
+        logger.warning("Decomposer fallback", raw=raw[:80])
+        return [orig]
+
+    @staticmethod
+    def _direct(t):
+        try:
+            r = json.loads(t.strip())
+            return r if isinstance(r, list) else None
+        except Exception: return None
+
+    @staticmethod
+    def _extract(t):
+        m = re.search(r"\[.*?\]", t, re.DOTALL)
+        if not m: return None
+        try: return json.loads(m.group(0))
+        except Exception: return None
+
+    @staticmethod
+    def _normalise(t):
+        n = re.sub(r"'([^']*)'", r'"\1"', t)
+        try:
+            r = json.loads(n.strip())
+            return r if isinstance(r, list) else None
+        except Exception: pass
+        m = re.search(r"\[.*?\]", n, re.DOTALL)
+        if m:
+            try: return json.loads(m.group(0))
+            except Exception: pass
+        return None
+
+    @staticmethod
+    def _strings(t):
+        s = re.findall(r'"([^"]{10,})"', t)
+        return s if len(s) >= 2 else None
+
+    @staticmethod
+    def _validate(parsed, original, min_i=2, max_i=4, min_c=10):
+        if not isinstance(parsed, list): return None
+        seen, out = set(), []
+        for item in parsed:
+            if not isinstance(item, str): continue
+            item = item.strip()
+            if len(item) < min_c: continue
+            lo = item.lower()
+            if lo in seen or lo == original.strip().lower(): continue
+            seen.add(lo); out.append(item)
+        if len(out) < min_i: return None
+        return out[:max_i]
