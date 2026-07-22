@@ -18,51 +18,50 @@ SYSTEM_PROMPT = (
 
 
 class PromptBuilder:
-    '''Formats reranked chunks and query into a Qwen2.5-3B ChatML prompt.'''
+    """Formats reranked chunks and query into a Qwen2.5-3B ChatML prompt."""
 
     @staticmethod
     def build(query: str, context_chunks: list[RankedChunk]) -> str:
         context_block = PromptBuilder._format_context(context_chunks)
         user_message  = PromptBuilder._format_user(query, context_block)
         prompt = (
-            f"<|im_start|>system
-{SYSTEM_PROMPT}<|im_end|>
-"
-            f"<|im_start|>user
-{user_message}<|im_end|>
-"
-            f"<|im_start|>assistant
-"
+            "<|im_start|>system\n"
+            + SYSTEM_PROMPT
+            + "<|im_end|>\n"
+            + "<|im_start|>user\n"
+            + user_message
+            + "<|im_end|>\n"
+            + "<|im_start|>assistant\n"
         )
-        logger.debug('Prompt built', chunks=len(context_chunks), chars=len(prompt))
+        logger.debug("Prompt built", chunks=len(context_chunks), chars=len(prompt))
         return prompt
 
     @staticmethod
     def _format_context(chunks: list[RankedChunk]) -> str:
         sections = []
         for i, chunk in enumerate(chunks, start=1):
-            header = (f"[{i}] Title: {chunk.doc_title} | "
-                      f"Authority: {chunk.governing_body} | "
-                      f"Domain: {chunk.ring_label}")
+            header = (
+                f"[{i}] Title: {chunk.doc_title} | "
+                f"Authority: {chunk.governing_body} | "
+                f"Domain: {chunk.ring_label}"
+            )
             if chunk.effective_date:
                 header += f" | Date: {chunk.effective_date}"
             if chunk.circular_ref:
                 header += f" | Ref: {chunk.circular_ref}"
-            sections.append(f"{header}
-{chunk.chunk_text}")
-        return "
-
-".join(sections)
+            sections.append(header + "\n" + chunk.chunk_text)
+        return "\n\n".join(sections)
 
     @staticmethod
     def _format_user(query: str, context_block: str) -> str:
-        return f"Context documents:
-
-{context_block}
-
-Question: {query}"
+        return (
+            "Context documents:\n\n"
+            + context_block
+            + "\n\nQuestion: "
+            + query
+        )
 
     @staticmethod
     def count_chunks_in_prompt(prompt: str) -> int:
-        '''Count [N] Title: headers -- used in tests.'''
+        """Count [N] Title: headers -- used in tests."""
         return len(re.findall(r"\[\d+\] Title:", prompt))

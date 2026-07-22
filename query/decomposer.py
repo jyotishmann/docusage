@@ -84,9 +84,13 @@ class QueryDecomposer:
 
     def _build_prompt(self, query: str) -> str:
         return (
-            f"<|im_start|>system\n{DECOMPOSE_SYSTEM}<|im_end|>\n"
-            f"<|im_start|>user\n{DECOMPOSE_USER.format(query=query)}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
+            f"<|im_start|>system\n" 
+            + DECOMPOSE_SYSTEM
+            + "<|im_end|>\n"
+            + "<|im_start|>user\n"
+            + DECOMPOSE_USER.format(query=query)
+            + "<|im_end|>\n"
+            + "<|im_start|>assistant\n"
         )
 
     def _parse_and_validate(self, raw, orig):

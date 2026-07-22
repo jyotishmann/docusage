@@ -71,15 +71,9 @@ class QueryRouter:
         if wc < self.max_simple:
             return RouterDecision(False,
                 f"Short query ({wc} words < {self.max_simple})")
-        if wc > self.min_complex:
-            return RouterDecision(True,
-                f"Long query ({wc} words > {self.min_complex})")
         qm = _qmark_count(query)
         if qm >= 2:
             return RouterDecision(True, f"Multiple question marks ({qm} found)")
-        found, phrase = _has_multi_part(query)
-        if found:
-            return RouterDecision(True, f"Explicit multi-part: {phrase!r}")
         found, phrase = _has_comparison(query)
         if found:
             return RouterDecision(True, f"Comparison language: {phrase!r}")
@@ -90,6 +84,13 @@ class QueryRouter:
         if pc >= self.min_products:
             return RouterDecision(True,
                 f"{pc} product names found (>= {self.min_products})")
+        if wc > self.min_complex:
+            return RouterDecision(True,
+                f"Long query ({wc} words > {self.min_complex})")
+        found, phrase = _has_multi_part(query)
+        if found:
+            return RouterDecision(True, f"Explicit multi-part: {phrase!r}")
+        
         return RouterDecision(False,
             f"No complexity triggers ({wc} words, {pc} products)")
 

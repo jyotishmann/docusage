@@ -225,7 +225,7 @@ class Settings(BaseSettings):
 
     # ── Query routing thresholds ───────────────────────────────────────────
     ROUTER_MAX_WORDS_SIMPLE: int = Field(
-        default=15,
+        default=5,
         description="Queries shorter than this are never decomposed",
     )
     ROUTER_MIN_WORDS_COMPLEX: int = Field(
