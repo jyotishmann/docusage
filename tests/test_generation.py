@@ -82,3 +82,72 @@ class TestReranker:
         ce.predict.return_value = [0.1]
         result = r.rerank('q', [chunk])
         assert result[0].score < 0.5 and result[0].source == 'reranker'
+
+# tests/test_generation.py -- Part 2: PromptBuilder tests (append to Part 1)
+from generation import PromptBuilder
+
+
+@pytest.fixture
+def sample_chunks():
+    chunks = []
+    for i in range(1, 4):
+        tc = TextChunk(
+            chunk_id=f'c{i}', doc_id='d1', doc_title=f'Test Document {i}',
+            source_url='https://test.com', governing_body=f'Authority {i}',
+            ring=i, ring_label=f'Ring {i}', chunk_index=0,
+            chunk_text=f'Content for chunk {i} about Indian personal finance.',
+            effective_date='2024-01-01',
+        )
+        chunks.append(RankedChunk(chunk=tc, rank=i, score=0.9, source='reranker'))
+    return chunks
+
+
+class TestPromptBuilder:
+    def test_returns_string(self, sample_chunks):
+        prompt = PromptBuilder.build('What is PPF?', sample_chunks)
+        assert isinstance(prompt, str) and len(prompt) > 0
+
+    def test_query_in_prompt(self, sample_chunks):
+        prompt = PromptBuilder.build('What is PPF interest rate?', sample_chunks)
+        assert 'What is PPF interest rate?' in prompt
+
+    def test_chunks_numbered_sequentially(self, sample_chunks):
+        prompt = PromptBuilder.build('query', sample_chunks)
+        assert '[1] Title: Test Document 1' in prompt
+        assert '[2] Title: Test Document 2' in prompt
+        assert '[3] Title: Test Document 3' in prompt
+
+    def test_chunk_metadata_in_prompt(self, sample_chunks):
+        prompt = PromptBuilder.build('query', sample_chunks)
+        assert 'Authority 1' in prompt
+        assert 'Ring 1' in prompt
+        assert '2024-01-01' in prompt
+
+    def test_chunk_text_in_prompt(self, sample_chunks):
+        prompt = PromptBuilder.build('query', sample_chunks)
+        assert 'Content for chunk 1 about Indian personal finance.' in prompt
+
+    def test_chatml_tokens_present(self, sample_chunks):
+        prompt = PromptBuilder.build('query', sample_chunks)
+        assert '<|im_start|>system' in prompt
+        assert '<|im_end|>' in prompt
+        assert '<|im_start|>user' in prompt
+        assert '<|im_start|>assistant' in prompt
+
+    def test_system_constraints_present(self, sample_chunks):
+        prompt = PromptBuilder.build('query', sample_chunks)
+        assert 'ONLY' in prompt   # context-only constraint
+        assert '[N]' in prompt    # citation format instruction
+
+    def test_count_chunks_utility(self, sample_chunks):
+        prompt = PromptBuilder.build('query', sample_chunks)
+        assert PromptBuilder.count_chunks_in_prompt(prompt) == 3
+
+    def test_empty_chunks_valid(self):
+        prompt = PromptBuilder.build('What is PPF?', [])
+        assert 'What is PPF?' in prompt
+
+    def test_chunk_order_preserved(self, sample_chunks):
+        prompt = PromptBuilder.build('query', sample_chunks)
+        pos = [prompt.index(f'[{i}] Title: Test Document {i}') for i in range(1, 4)]
+        assert pos == sorted(pos)
