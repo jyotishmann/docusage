@@ -54,3 +54,81 @@ class HallucinationAuditor:
     def extract_cited_markers(sentence: str) -> list[int]:
         # Return all [N] integer values found in the sentence.
         return [int(m) for m in _CITATION_RE.findall(sentence)]
+
+# audit/auditor.py -- Part 2: NLI scoring (append after Part 1)
+from scipy.special import softmax
+
+
+# append to HallucinationAuditor class:
+
+def audit(self, generation_result: GenerationResult) -> AuditResult:
+    # Full pipeline: split -> extract markers -> batch NLI -> assign status.
+    if self._model is None:
+        raise RuntimeError("Call .load() before .audit()")
+
+    t0     = time.perf_counter()
+    answer = generation_result.answer
+    chunks = generation_result.context_chunks
+
+    sentences    = self.split_sentences(answer)
+    sent_markers = [self.extract_cited_markers(s) for s in sentences]
+
+    # Build (premise, hypothesis) pairs for cited sentences
+    cited_pairs: list[tuple[str, str]] = []
+    pair_map:    dict[int, tuple[int, int]] = {}
+    for si, (sentence, markers) in enumerate(zip(sentences, sent_markers)):
+        for n in markers:
+            if 1 <= n <= len(chunks):
+                pair_map[len(cited_pairs)] = (si, n - 1)
+                cited_pairs.append((chunks[n - 1].chunk_text, sentence))
+
+    # Batched NLI inference
+    if cited_pairs:
+        logits            = self._model.predict(cited_pairs,
+                            show_progress_bar=False, convert_to_numpy=True)
+        probs             = softmax(logits, axis=1)     # (n_pairs, 3)
+        entailment_probs  = probs[:, _NLI_ENTAILMENT]   # (n_pairs,)
+    else:
+        entailment_probs = np.array([])
+
+    # Aggregate: max entailment per sentence across cited chunks
+    sent_best: dict[int, tuple[float, int]] = {}
+    for pair_idx, (si, ci) in pair_map.items():
+        score = float(entailment_probs[pair_idx])
+        if si not in sent_best or score > sent_best[si][0]:
+            sent_best[si] = (score, ci)
+
+    # Build SentenceAudit for each sentence
+    sentence_audits: list[SentenceAudit] = []
+    for si, (sentence, markers) in enumerate(zip(sentences, sent_markers)):
+        if not markers:
+            sa = SentenceAudit(sentence, "UNSUPPORTED", 0.0, [], None)
+        elif si in sent_best:
+            best_score, best_ci = sent_best[si]
+            if best_score >= self.entailment_threshold:
+                status = "SUPPORTED"
+            elif best_score < self.flag_threshold:
+                status = "CONTRADICTED"
+            else:
+                status = "UNCERTAIN"
+            sa = SentenceAudit(sentence, status, best_score, markers,
+                                chunks[best_ci].chunk_id)
+        else:
+            sa = SentenceAudit(sentence, "UNSUPPORTED", 0.0, markers, None)
+        sentence_audits.append(sa)
+
+    # Compute overall metrics
+    n_total      = max(1, len(sentence_audits))
+    supported    = sum(1 for s in sentence_audits if s.status == "SUPPORTED")
+    contradicted = sum(1 for s in sentence_audits if s.status == "CONTRADICTED")
+    support_rate = supported / n_total
+    flagged      = (contradicted > 0) or (support_rate < self.support_rate_min)
+    latency_ms   = (time.perf_counter() - t0) * 1000
+
+    logger.info("Audit complete", sentences=n_total, supported=supported,
+                contradicted=contradicted, flagged=flagged,
+                latency_ms=round(latency_ms))
+
+    return AuditResult(sentence_audits=sentence_audits, flagged=flagged,
+                        support_rate=support_rate, answer=answer,
+                        latency_ms=latency_ms)
