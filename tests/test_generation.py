@@ -151,3 +151,64 @@ class TestPromptBuilder:
         prompt = PromptBuilder.build('query', sample_chunks)
         pos = [prompt.index(f'[{i}] Title: Test Document {i}') for i in range(1, 4)]
         assert pos == sorted(pos)
+
+# tests/test_generation.py -- Part 3: CitationFormatter tests (append)
+from generation import CitationFormatter
+from generation.models import Citation
+
+
+class TestCitationFormatter:
+    def test_single_valid_marker(self, sample_chunks):
+        citations = CitationFormatter.format('PPF rate is 7.1% [1].', sample_chunks)
+        assert len(citations) == 1 and citations[0].marker == 1
+
+    def test_multiple_markers(self, sample_chunks):
+        answer = 'PPF rate [1]. ELSS lock-in [2]. NPS at 60 [3].'
+        citations = CitationFormatter.format(answer, sample_chunks)
+        assert [c.marker for c in citations] == [1, 2, 3]
+
+    def test_duplicates_deduplicated(self, sample_chunks):
+        answer = 'PPF rate [1] is good. Also PPF [1] allows withdrawal [1].'
+        citations = CitationFormatter.format(answer, sample_chunks)
+        assert len(citations) == 1 and citations[0].marker == 1
+
+    def test_out_of_range_ignored(self, sample_chunks):
+        answer = 'Some claim [99] and another [0].'
+        assert CitationFormatter.format(answer, sample_chunks) == []
+
+    def test_no_markers_returns_empty(self, sample_chunks):
+        assert CitationFormatter.format('PPF has 15 year lock-in.', sample_chunks) == []
+
+    def test_sorted_by_marker(self, sample_chunks):
+        answer = 'Claim [3] and [1] and [2].'
+        citations = CitationFormatter.format(answer, sample_chunks)
+        assert [c.marker for c in citations] == [1, 2, 3]
+
+    def test_chunk_id_correct_index(self, sample_chunks):
+        citations = CitationFormatter.format('Text [2]', sample_chunks)
+        assert citations[0].chunk.chunk_id == sample_chunks[1].chunk_id
+
+    def test_citation_properties(self, sample_chunks):
+        citations = CitationFormatter.format('Text [1]', sample_chunks)
+        c = citations[0]
+        assert c.doc_title == 'Test Document 1'
+        assert c.governing_body == 'Authority 1'
+        assert c.ring_label == 'Ring 1'
+
+    def test_empty_answer_returns_empty(self, sample_chunks):
+        assert CitationFormatter.format('', sample_chunks) == []
+
+    def test_empty_chunks_returns_empty(self):
+        assert CitationFormatter.format('Text [1]', []) == []
+
+    def test_count_markers_includes_duplicates(self, sample_chunks):
+        answer = 'Claim [1] and [1] again and [2] here.'
+        assert CitationFormatter.count_markers(answer) == 3
+
+    def test_has_uncited_all_cited(self, sample_chunks):
+        answer = 'PPF rate 7.1% [1]. ELSS 3yr lock-in [2]. NPS annuity [3].'
+        assert CitationFormatter.has_uncited_claims(answer) is False
+
+    def test_has_uncited_mostly_uncited(self, sample_chunks):
+        answer = 'PPF is a scheme. NPS is a pension. ELSS is a fund. LRS 250k [1].'
+        assert CitationFormatter.has_uncited_claims(answer) is True
