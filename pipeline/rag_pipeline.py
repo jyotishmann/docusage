@@ -103,3 +103,73 @@ class RAGPipeline:
         if not self._loaded:
             self.load()
         return self
+     
+    # pipeline/rag_pipeline.py -- Part 2: run() method (append to class body)
+
+    def run(
+        self,
+        query:       str,
+        ring_filter: list[str] | None = None,
+    ) -> PipelineResult:
+        # Execute 6-stage pipeline. Returns PipelineResult for Gradio.
+        self.load_once()
+        t_start = time.perf_counter()
+        query   = query.strip()
+
+        if not query:
+            return self._error_result("Empty query", query, ring_filter)
+
+        logger.info("Pipeline run", query=query[:60], rings=ring_filter)
+
+        # Stage 1: route
+        router_decision = self.router.route(query)
+
+        # Stage 2: decompose (or pass through)
+        if router_decision.decompose and self.decomposer is not None:
+            sub_queries = self.decomposer.decompose(query)
+        else:
+            sub_queries = [query]
+
+        logger.info("Sub-queries", count=len(sub_queries))
+
+        # Stage 3: hybrid retrieval with sub_queries
+        candidates = self.retriever.retrieve(
+            sub_queries=sub_queries,
+            ring_filter=ring_filter,
+        )
+        if not candidates:
+            return self._error_result(
+                "No relevant documents found. Try a different question "
+                "or remove the domain filter.", query, ring_filter)
+
+        # Stage 4: rerank with ORIGINAL query
+        reranked = self.reranker.rerank(
+            query=query,
+            candidates=candidates,
+        )
+
+        # Stage 5: generate with ORIGINAL query
+        gen_result = self.generator.generate(
+            query=query,
+            context_chunks=reranked,
+            sub_queries=sub_queries,
+        )
+
+        # Stage 6: audit
+        audit_result = self.auditor.audit(gen_result)
+
+        total_ms = (time.perf_counter() - t_start) * 1000
+        logger.info("Pipeline complete",
+                    total_ms=round(total_ms),
+                    flagged=audit_result.flagged,
+                    citations=len(gen_result.citations))
+
+        return PipelineResult(
+            generation=gen_result,
+            audit=audit_result,
+            router_decision=router_decision,
+            sub_queries=sub_queries,
+            ring_filter=ring_filter or [],
+            retrieval_candidate_count=len(candidates),
+            total_latency_ms=total_ms,
+        )
