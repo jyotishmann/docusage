@@ -83,3 +83,88 @@ class TestExtractCitedMarkers:
         assert result == [1, 1, 1]  # raw extraction, dedup done in audit()
     def test_two_digit(self):
         assert HallucinationAuditor.extract_cited_markers("Source [12].") == [12]
+
+# tests/test_audit.py -- Part 2: NLI scoring tests (append after Part 1)
+import numpy as np
+from unittest.mock import MagicMock
+from corpus.models import TextChunk
+from retrieval import RankedChunk
+from generation.models import GenerationResult
+from audit import HallucinationAuditor
+
+
+def make_chunk(cid, text):
+    tc = TextChunk(
+        chunk_id=cid, doc_id="d1", doc_title="Doc",
+        source_url="https://t.com", governing_body="Gov",
+        ring=1, ring_label="Ring 1", chunk_index=0, chunk_text=text,
+    )
+    return RankedChunk(chunk=tc, rank=1, score=0.8, source="reranker")
+
+
+def make_gen(answer, chunks):
+    return GenerationResult(
+        answer=answer, citations=[], query="test", context_chunks=chunks)
+
+
+def make_auditor(logits):
+    a = HallucinationAuditor(
+        entailment_threshold=0.70, flag_threshold=0.40, support_rate_min=0.40)
+    m = MagicMock()
+    m.predict.return_value = logits
+    a._model = m
+    return a
+
+
+class TestAuditorNLI:
+    def test_high_entailment_supported(self):
+        # logits [0, 0, 5] -> softmax -> entailment ~0.993
+        chunks = [make_chunk("c1", "PPF interest rate is 7.1 percent per annum.")]
+        gen    = make_gen("PPF interest rate is 7.1 percent per annum [1].", chunks)
+        result = make_auditor(np.array([[0.0, 0.0, 5.0]])).audit(gen)
+        assert result.sentence_audits[0].status == "SUPPORTED"
+        assert result.sentence_audits[0].entailment_score > 0.70
+
+    def test_low_entailment_contradicted(self):
+        # logits [5, 0, 0] -> softmax -> entailment ~0.007
+        chunks = [make_chunk("c1", "PPF lock-in period is 15 years.")]
+        gen    = make_gen("PPF lock-in period is only 5 years [1].", chunks)
+        result = make_auditor(np.array([[5.0, 0.0, 0.0]])).audit(gen)
+        assert result.sentence_audits[0].status == "CONTRADICTED"
+
+    def test_mid_entailment_uncertain(self):
+        # logits [0, 1.2, 1.5] -> entailment score ~0.57
+        chunks = [make_chunk("c1", "PPF partial withdrawal allowed from year 7.")]
+        gen    = make_gen("PPF allows some withdrawal after a few years [1].", chunks)
+        result = make_auditor(np.array([[0.0, 1.2, 1.5]])).audit(gen)
+        assert result.sentence_audits[0].status == "UNCERTAIN"
+
+    def test_uncited_sentence_no_nli_call(self):
+        # Sentence without [N] markers -> UNSUPPORTED without any predict() call
+        chunks = [make_chunk("c1", "PPF rate is 7.1 percent.")]
+        gen    = make_gen("PPF is a solid long term investment option.", chunks)
+        a = HallucinationAuditor(entailment_threshold=0.70, flag_threshold=0.40)
+        mock_m = MagicMock()
+        a._model = mock_m
+        result = a.audit(gen)
+        assert result.sentence_audits[0].status == "UNSUPPORTED"
+        mock_m.predict.assert_not_called()  # no NLI for uncited sentences
+
+    def test_max_score_across_two_chunks(self):
+        # pair 0: (c1, sentence) -> entailment ~0.007 (low)
+        # pair 1: (c2, sentence) -> entailment ~0.993 (high)
+        # max should produce SUPPORTED
+        chunks = [
+            make_chunk("c1", "Irrelevant text about unrelated topics."),
+            make_chunk("c2", "PPF interest rate is 7.1 percent per annum."),
+        ]
+        gen    = make_gen("PPF rate is 7.1 percent [1][2].", chunks)
+        result = make_auditor(np.array([[5.0, 0.0, -5.0], [0.0, 0.0, 5.0]])).audit(gen)
+        assert result.sentence_audits[0].status == "SUPPORTED"
+
+    def test_flagged_when_contradicted(self):
+        chunks = [make_chunk("c1", "PPF rate is 7.1 percent.")]
+        gen    = make_gen("PPF rate is 12 percent per year [1].", chunks)
+        result = make_auditor(np.array([[5.0, 0.0, 0.0]])).audit(gen)
+        assert result.flagged is True
+        assert result.contradicted_count == 1
