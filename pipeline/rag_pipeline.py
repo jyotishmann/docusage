@@ -11,6 +11,9 @@ from query import QueryRouter, QueryDecomposer, DecomposerModel
 from generation import Reranker, Generator
 from audit import HallucinationAuditor
 from pipeline.models import PipelineResult
+from generation.models import GenerationResult
+from audit.models import AuditResult
+from query.router import RouterDecision
 
 logger = get_logger(__name__)
 
@@ -173,3 +176,58 @@ class RAGPipeline:
             retrieval_candidate_count=len(candidates),
             total_latency_ms=total_ms,
         )
+    
+# pipeline/rag_pipeline.py -- Part 3: Error handling (append to class body)
+
+    def _error_result(
+        self,
+        message: str,
+        query: str,
+        ring_filter: list[str] | None,
+    ) -> PipelineResult:
+        # Safe PipelineResult for error states. Gradio checks .is_error.
+        empty_gen   = GenerationResult(
+            answer=message, citations=[], query=query,
+            sub_queries=[], context_chunks=[])
+        empty_audit = AuditResult(
+            sentence_audits=[], flagged=False,
+            support_rate=0.0, answer=message)
+        empty_router = RouterDecision(decompose=False, reason="error")
+        return PipelineResult(
+            generation=empty_gen, audit=empty_audit,
+            router_decision=empty_router, sub_queries=[query],
+            ring_filter=ring_filter or [], error=message)
+
+    def run_safe(
+        self,
+        query: str,
+        ring_filter: list[str] | None = None,
+    ) -> PipelineResult:
+        # Always use this from Gradio callbacks -- catches all exceptions.
+        try:
+            return self.run(query, ring_filter)
+        except Exception as exc:
+            logger.error("Pipeline exception", error=str(exc), exc_info=True)
+            return self._error_result(
+                f"An error occurred: {str(exc)[:200]}", query, ring_filter)
+
+    def status(self) -> dict:
+        # Health status for System Status tab and HF Spaces monitoring.
+        return {
+            "loaded":          self._loaded,
+            "registry_chunks": len(self.registry) if self.registry else 0,
+            "components": {
+                "decomposer": self.decomposer is not None,
+                "retriever":  self.retriever  is not None,
+                "reranker":   self.reranker   is not None,
+                "generator":  self.generator  is not None,
+                "auditor":    self.auditor    is not None,
+            },
+            "settings": {
+                "bm25_top_k":          self.cfg.BM25_TOP_K,
+                "faiss_top_k":         self.cfg.FAISS_TOP_K,
+                "reranker_input_k":    self.cfg.RERANKER_INPUT_K,
+                "generator_context_k": self.cfg.GENERATOR_CONTEXT_K,
+                "rrf_k":               self.cfg.RRF_K,
+            },
+        }
