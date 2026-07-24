@@ -2,12 +2,42 @@
 # Hugging Face Spaces entry point for DocuSage.
 # HF Spaces requires this exact filename and a top-level launch() call.
 # This stub is replaced progressively as pipeline components are built.
+from __future__ import annotations
+import os, re
+import html as html_module
 
 import gradio as gr
 
 from config import get_logger, settings  # Triggers logging + dir setup
+from pipeline import RAGPipeline, PipelineResult
+from audit.models import SentenceStatus
 
 logger = get_logger(__name__)
+
+# Pipeline singleton (indices eager, weights lazy)
+pipeline = RAGPipeline()
+logger.info("RAGPipeline initialised; model weights load on first query.")
+
+ALL_RING_LABELS = [
+    "Market Investments",
+    "Govt Schemes",
+    "Banking & RBI",
+    "Foreign Investments",
+]
+
+STATUS_COLOURS: dict[str, str] = {
+    "SUPPORTED":    "rgba(34, 197, 94, 0.20)",
+    "UNCERTAIN":    "rgba(234, 179, 8, 0.22)",
+    "CONTRADICTED": "rgba(239, 68, 68, 0.30)",
+    "UNSUPPORTED":  "transparent",
+}
+
+STATUS_LABELS: dict[str, str] = {
+    "SUPPORTED":    "Verified",
+    "UNCERTAIN":    "Uncertain",
+    "CONTRADICTED": "Contradicted",
+    "UNSUPPORTED":  "Uncited",
+}
 
 # ── Stub pipeline function (replaced in SNIPPETS_09_FRONTEND.md) ───────────
 def run_pipeline_stub(query: str, ring_filter: list) -> tuple:
