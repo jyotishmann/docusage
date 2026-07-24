@@ -1,0 +1,51 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "docusage"
+version = "1.0.0"
+description = "Indian Personal Finance RAG Pipeline with Hallucination Audit"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "DocuSage", email = "docusage@example.com" }]
+keywords = ["rag", "nlp", "gradio", "indian-finance", "llm"]
+
+[tool.pytest.ini_options]
+testpaths   = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts  = "-v --tb=short --strict-markers"
+markers  = [
+    "slow: marks tests requiring model weights or GPU (deselect with -m 'not slow')",
+]
+
+[tool.ruff]
+line-length    = 100
+target-version = "py310"
+select         = ["E", "W", "F", "I", "N", "UP"]
+ignore         = [
+    "E501",   # line too long (handled by formatter)
+    "N806",   # variable in function should be lowercase (ok for ML)
+]
+exclude = ["data/", ".venv/", "__pycache__/"]
+
+[tool.mypy]
+python_version       = "3.10"
+ignore_missing_imports = true
+no_strict_optional   = true
+warn_return_any      = false
+exclude              = ["data/", "scripts/"]
+
+[tool.coverage.run]
+omit = ["tests/*", "scripts/*", "data/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "def __repr__",
+]
