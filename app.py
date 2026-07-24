@@ -41,7 +41,6 @@ STATUS_LABELS: dict[str, str] = {
 
 # app.py -- Part 2: Answer HTML renderer (append after Part 1)
 
-
 def _escape(text: str) -> str:
     return html_module.escape(text)
 
@@ -96,6 +95,48 @@ def render_answer(result: PipelineResult) -> str:
     legend = f'<div class="audit-legend">{legend_items}</div>'
 
     return f'<div class="docusage-answer">{legend}{answer_html}</div>'
+
+# app.py -- Part 3: Citation cards (append)
+
+
+def render_citations(result: PipelineResult) -> str:
+    if result.is_error or not result.citations:
+        return '<div class="muted">No citations for this response.</div>'
+
+    cards = []
+    for cit in result.citations:
+        if cit.source_url:
+            title_html = (
+                f'<a href="{_escape(cit.source_url)}" target="_blank" '
+                f'class="cite-title">{_escape(cit.doc_title)}</a>'
+            )
+        else:
+            title_html = f'<span class="cite-title">{_escape(cit.doc_title)}</span>'
+
+        meta_parts = [
+            f'<span class="cite-meta">{_escape(cit.governing_body)}</span>',
+            f'<span class="cite-ring">{_escape(cit.ring_label)}</span>',
+        ]
+        if cit.effective_date:
+            meta_parts.append(
+                f'<span class="cite-date">&#128197; {_escape(cit.effective_date)}</span>')
+        if cit.circular_ref:
+            meta_parts.append(
+                f'<span class="cite-ref">&#128196; {_escape(cit.circular_ref)}</span>')
+
+        meta_html = "  |  ".join(meta_parts)
+        excerpt   = _escape(_truncate(cit.chunk.chunk_text))
+
+        cards.append(
+            f'<div class="cite-card">'
+            f'<div class="cite-header">'
+            f'<span class="cite-num">[{cit.marker}]</span>{title_html}</div>'
+            f'<div class="cite-meta-row">{meta_html}</div>'
+            f'<div class="cite-excerpt">{excerpt}</div>'
+            f'</div>'
+        )
+
+    return '<div class="citations-panel">' + "".join(cards) + '</div>'
 
 # ── Stub pipeline function (replaced in SNIPPETS_09_FRONTEND.md) ───────────
 def run_pipeline_stub(query: str, ring_filter: list) -> tuple:
