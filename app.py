@@ -39,6 +39,64 @@ STATUS_LABELS: dict[str, str] = {
     "UNSUPPORTED":  "Uncited",
 }
 
+# app.py -- Part 2: Answer HTML renderer (append after Part 1)
+
+
+def _escape(text: str) -> str:
+    return html_module.escape(text)
+
+
+def _truncate(text: str, max_chars: int = 200) -> str:
+    if len(text) <= max_chars:
+        return text
+    t = text[:max_chars]
+    last_sp = t.rfind(" ")
+    return (t[:last_sp] + "...") if last_sp > 0 else (t + "...")
+
+
+def render_answer(result: PipelineResult) -> str:
+    if result.is_error:
+        return (
+            '<div class="error-card">'
+            '<span class="error-icon">&#9888;</span>'
+            f'<span class="error-text">{_escape(result.error or "Unknown error")}</span>'
+            '</div>'
+        )
+    if not result.answer:
+        return '<div class="docusage-answer muted">No answer generated.</div>'
+
+    answer_text = result.answer
+
+    # Pass 1: colour-code sentences
+    for sa in result.sentence_audits:
+        colour = STATUS_COLOURS.get(sa.status, "transparent")
+        badge  = STATUS_LABELS.get(sa.status, sa.status)
+        if colour == "transparent":
+            styled = _escape(sa.sentence)
+        else:
+            styled = (
+                f'<span class="sent-audit" '
+                f'style="background:{colour};border-radius:3px;padding:1px 0" '
+                f'title="{badge}">{_escape(sa.sentence)}</span>'
+            )
+        answer_text = answer_text.replace(sa.sentence, styled, 1)
+
+    # Pass 2: replace [N] with superscript cite badge
+    def replace_marker(m):
+        n = m.group(1)
+        return f'<sup><span class="cite-badge" title="Citation {n}">[{n}]</span></sup>'
+
+    answer_html = re.sub(r'\[(\d+)\]', replace_marker, answer_text)
+
+    legend_items = "".join(
+        f'<span class="legend-item" style="background:{STATUS_COLOURS[s]}">'
+        f'{STATUS_LABELS[s]}</span>'
+        for s in ("SUPPORTED", "UNCERTAIN", "CONTRADICTED")
+    )
+    legend = f'<div class="audit-legend">{legend_items}</div>'
+
+    return f'<div class="docusage-answer">{legend}{answer_html}</div>'
+
 # ── Stub pipeline function (replaced in SNIPPETS_09_FRONTEND.md) ───────────
 def run_pipeline_stub(query: str, ring_filter: list) -> tuple:
     """
