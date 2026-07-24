@@ -309,6 +309,77 @@ def build_ui() -> gr.Blocks:
 
     return demo
 
+# app.py -- Part 7: Global CSS and launch (append)
+
+CUSTOM_CSS = """
+.docusage-answer { font-size:1rem; line-height:1.75; padding:12px; }
+.sent-audit { transition:background 0.2s; border-radius:3px; padding:1px 2px; }
+.cite-badge {
+    background: var(--color-accent, #3b82f6); color: white;
+    border-radius:4px; padding:1px 4px; font-size:0.72em;
+    font-weight:600; cursor:help;
+}
+.error-card {
+    background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3);
+    border-radius:8px; padding:14px 18px; display:flex; align-items:center; gap:10px;
+}
+.error-icon { font-size:1.3rem; }
+.error-text { color:#dc2626; }
+.warning-banner {
+    background:rgba(234,179,8,0.15); border:1px solid rgba(234,179,8,0.5);
+    border-radius:8px; padding:12px 18px; margin:8px 0;
+}
+.warning-icon { font-size:1.2rem; margin-right:6px; }
+.cite-card {
+    border:1px solid var(--border-color-primary, #e5e7eb);
+    border-radius:8px; padding:12px; margin-bottom:10px;
+}
+.cite-header { display:flex; align-items:baseline; gap:8px; margin-bottom:6px; }
+.cite-num { font-weight:700; color:var(--color-accent,#3b82f6); min-width:28px; }
+.cite-title { font-weight:600; text-decoration:none; color:inherit; }
+.cite-title:hover { text-decoration:underline; }
+.cite-meta-row { font-size:0.82rem; color:var(--text-color-subdued,#888); margin-bottom:6px; }
+.cite-excerpt {
+    font-size:0.88rem; font-style:italic;
+    color:var(--text-color-subdued,#666);
+    border-left:3px solid var(--border-color-primary,#e5e7eb); padding-left:10px;
+}
+.audit-legend { display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+.legend-item { font-size:0.78rem; border-radius:4px; padding:2px 8px; }
+.metrics-panel {
+    display:flex; gap:18px; flex-wrap:wrap;
+    font-size:0.85rem; color:var(--text-color-subdued,#888);
+    padding:8px 0; border-top:1px solid var(--border-color-primary,#e5e7eb);
+}
+.metric { display:flex; align-items:center; gap:4px; }
+.badge-green {
+    background:rgba(34,197,94,0.2); color:#15803d;
+    border-radius:4px; padding:1px 8px; font-size:0.82rem; font-weight:600;
+}
+.badge-red {
+    background:rgba(239,68,68,0.15); color:#dc2626;
+    border-radius:4px; padding:1px 8px; font-size:0.82rem; font-weight:600;
+}
+.subq-panel { padding:8px 4px; }
+.subq-row { display:flex; gap:10px; margin-bottom:6px; align-items:baseline; }
+.subq-label { font-weight:600; min-width:130px; font-size:0.9rem; }
+.subq-value { font-size:0.9rem; }
+.subq-list { margin:4px 0 0 0; padding-left:20px; }
+.subq-item { margin:3px 0; font-size:0.9rem; }
+.muted { color:var(--text-color-subdued,#888); font-style:italic; padding:8px; }
+.citations-panel { max-height:600px; overflow-y:auto; padding-right:4px; }
+"""
+
+# Module-level build (HF Spaces pattern)
+demo = build_ui()
+
+if __name__ == "__main__":
+    demo.launch(
+        server_port=settings.GRADIO_SERVER_PORT,
+        share=False,      # HF Spaces provides the public URL
+        show_api=False,   # no raw API endpoint
+    )
+
 # ── Stub pipeline function (replaced in SNIPPETS_09_FRONTEND.md) ───────────
 def run_pipeline_stub(query: str, ring_filter: list) -> tuple:
     """
