@@ -228,6 +228,87 @@ def on_submit(
         render_metrics(result),
     )
 
+# app.py -- Part 6: Gradio Blocks layout (append)
+
+
+EXAMPLE_QUERIES = [
+    ["What is the current PPF interest rate and how is it compounded?"],
+    ["Compare NPS vs PPF for retirement planning for a 35-year-old in India"],
+    ["What are the ELSS tax benefits under Section 80C and the lock-in period?"],
+    ["How does the LRS remittance limit work for investing in US stocks from India?"],
+    ["What is the DICGC insurance limit for bank deposits in India?"],
+    ["PPF vs NPS and also explain ELSS tax saving for a salaried employee"],
+]
+
+
+def build_ui() -> gr.Blocks:
+    with gr.Blocks(
+        title="DocuSage -- Indian Personal Finance RAG",
+        theme=gr.themes.Soft(primary_hue="blue"),
+        css=CUSTOM_CSS,
+    ) as demo:
+
+        gr.Markdown(
+            "# DocuSage &#128218;\n"
+            "**Indian Personal Finance Q&A** -- grounded answers with source citations."
+        )
+
+        with gr.Tabs():
+            with gr.Tab("Ask"):
+                with gr.Row():
+                    with gr.Column(scale=5):
+                        query_box = gr.Textbox(
+                            label="Your question",
+                            placeholder="e.g. What is the current PPF interest rate?",
+                            lines=2, max_lines=5,
+                        )
+                    with gr.Column(scale=1, min_width=130):
+                        submit_btn = gr.Button(
+                            "Ask DocuSage", variant="primary", size="lg")
+
+                ring_filter = gr.CheckboxGroup(
+                    choices=ALL_RING_LABELS,
+                    value=ALL_RING_LABELS,
+                    label="Knowledge domains to search",
+                )
+                banner_out = gr.HTML(value="")
+
+                with gr.Row():
+                    with gr.Column(scale=7):
+                        answer_out = gr.HTML(
+                            value='<div class="muted">Your answer will appear here.</div>',
+                            label="Answer",
+                        )
+                    with gr.Column(scale=3):
+                        with gr.Accordion("Citations", open=True):
+                            citations_out = gr.HTML(
+                                value='<div class="muted">No citations yet.</div>')
+
+                with gr.Accordion("Sub-queries explored", open=False):
+                    subq_out = gr.HTML(value="")
+
+                metrics_out = gr.HTML(value="")
+
+                gr.Examples(
+                    examples=EXAMPLE_QUERIES,
+                    inputs=[query_box],
+                    label="Example questions",
+                )
+
+            with gr.Tab("System Status"):
+                status_out  = gr.JSON(label="Pipeline Status", value={})
+                refresh_btn = gr.Button("Refresh Status")
+
+        # Event wiring
+        outputs = [answer_out, banner_out, citations_out, subq_out, metrics_out]
+        inputs  = [query_box, ring_filter]
+
+        submit_btn.click(fn=on_submit, inputs=inputs, outputs=outputs)
+        query_box.submit(fn=on_submit, inputs=inputs, outputs=outputs)
+        refresh_btn.click(fn=lambda: pipeline.status(), outputs=[status_out])
+
+    return demo
+
 # ── Stub pipeline function (replaced in SNIPPETS_09_FRONTEND.md) ───────────
 def run_pipeline_stub(query: str, ring_filter: list) -> tuple:
     """
