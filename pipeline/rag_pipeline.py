@@ -3,7 +3,8 @@ from __future__ import annotations
 import time
 import threading
 
-from config import get_logger, settings as default_settings, Settings
+from config import get_logger, settings as default_settings
+from config.settings import Settings 
 from corpus import CorpusRegistry
 from indexing import BM25IndexLoader, FAISSIndexLoader
 from retrieval import BM25Retriever, DenseRetriever, HybridRetriever
@@ -28,7 +29,7 @@ class RAGPipeline:
 
         # Eager: load indices (fast, no VRAM)
         logger.info("Loading corpus registry and indices")
-        self.registry  = CorpusRegistry.load(self.cfg.REGISTRY_PATH)
+        self.registry  = CorpusRegistry.load(self.cfg.CORPUS_REGISTRY_PATH)
         bm25_loader    = BM25IndexLoader(self.cfg.INDEX_DIR).load_all()
         faiss_loader   = FAISSIndexLoader(self.cfg.INDEX_DIR).load_all()
         logger.info("Indices loaded", chunks=len(self.registry))
@@ -176,9 +177,7 @@ class RAGPipeline:
             retrieval_candidate_count=len(candidates),
             total_latency_ms=total_ms,
         )
-    
-# pipeline/rag_pipeline.py -- Part 3: Error handling (append to class body)
-
+    # pipeline/rag_pipeline.py -- Part 3: Error handling (append to class body)
     def _error_result(
         self,
         message: str,
