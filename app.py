@@ -185,6 +185,49 @@ def render_metrics(result: PipelineResult) -> str:
         '</div>'
     )
 
+# app.py -- Part 5: Warning banner and on_submit handler (append)
+
+
+def render_banner(result: PipelineResult) -> str:
+    if result.is_error or not result.flagged:
+        return ""
+    return (
+        '<div class="warning-banner">'
+        '<span class="warning-icon">&#9888;</span>'
+        '<strong>Hallucination Warning: </strong>'
+        f'{_escape(result.flag_reason)}. '
+        'Claims marked in red may not be fully supported by cited sources. '
+        'Please verify at the source links.'
+        '</div>'
+    )
+
+
+def on_submit(
+    query: str,
+    ring_filter: list[str],
+) -> tuple[str, str, str, str, str]:
+    """
+    Gradio submit handler.
+    Returns (answer_html, banner_html, citations_html, subq_html, metrics_html).
+    """
+    query = (query or "").strip()
+    if not query:
+        err = pipeline._error_result("Please enter a question.", "", ring_filter)
+        return (render_answer(err), "", render_citations(err),
+                render_subqueries(err), render_metrics(err))
+
+    # None means search all rings (no filter)
+    rings = ring_filter if (ring_filter and len(ring_filter) < len(ALL_RING_LABELS)) else None
+
+    result = pipeline.run_safe(query, rings)
+    return (
+        render_answer(result),
+        render_banner(result),
+        render_citations(result),
+        render_subqueries(result),
+        render_metrics(result),
+    )
+
 # ── Stub pipeline function (replaced in SNIPPETS_09_FRONTEND.md) ───────────
 def run_pipeline_stub(query: str, ring_filter: list) -> tuple:
     """
