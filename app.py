@@ -138,6 +138,53 @@ def render_citations(result: PipelineResult) -> str:
 
     return '<div class="citations-panel">' + "".join(cards) + '</div>'
 
+# app.py -- Part 4: Sub-queries and metrics renderers (append)
+
+def render_subqueries(result: PipelineResult) -> str:
+    if result.is_error:
+        return ""
+    decomp = ("Yes -- query was decomposed" if result.was_decomposed
+               else "No -- handled directly")
+    sub_q_html = "".join(
+        f'<li class="subq-item">{_escape(q)}</li>'
+        for q in result.sub_queries
+    )
+    rings = (", ".join(result.ring_filter) if result.ring_filter
+             else "All domains")
+    return (
+        '<div class="subq-panel">'
+        f'<div class="subq-row"><span class="subq-label">Decomposed:</span>'
+        f'<span class="subq-value">{decomp}</span></div>'
+        f'<div class="subq-row"><span class="subq-label">Reason:</span>'
+        f'<span class="subq-value muted">{_escape(result.decomposition_reason)}</span></div>'
+        f'<div class="subq-row"><span class="subq-label">Sub-queries:</span>'
+        f'<ol class="subq-list">{sub_q_html}</ol></div>'
+        f'<div class="subq-row"><span class="subq-label">Domains:</span>'
+        f'<span class="subq-value">{_escape(rings)}</span></div>'
+        '</div>'
+    )
+
+
+def render_metrics(result: PipelineResult) -> str:
+    if result.is_error:
+        return ""
+    if result.flagged:
+        audit_badge = (
+            f'<span class="badge-red">FLAGGED — '
+            f'{_escape(result.flag_reason)}</span>'
+        )
+    else:
+        audit_badge = '<span class="badge-green">CLEAN</span>'
+    return (
+        '<div class="metrics-panel">'
+        f'<span class="metric">&#9201; {result.total_latency_ms:.0f} ms</span>'
+        f'<span class="metric">&#128203; {result.tokens_generated} tokens</span>'
+        f'<span class="metric">&#128270; {result.retrieval_candidate_count} candidates</span>'
+        f'<span class="metric">&#10003; {result.support_rate:.0%} verified</span>'
+        f'<span class="metric">Audit: {audit_badge}</span>'
+        '</div>'
+    )
+
 # ── Stub pipeline function (replaced in SNIPPETS_09_FRONTEND.md) ───────────
 def run_pipeline_stub(query: str, ring_filter: list) -> tuple:
     """
